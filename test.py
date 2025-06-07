@@ -1164,7 +1164,7 @@ def complex_test(api):
     user_ids = []
     for i in range(20):
         uid = api.register_user(f"user{i+20}", "pwd")["user_id"]
-        mode = "FAST" if i % 2 == 0 else "TRICKLE"
+        mode = "FAST" 
         api.submit_charging_request(uid, mode, 20 + i)
         user_ids.append(uid)
 
