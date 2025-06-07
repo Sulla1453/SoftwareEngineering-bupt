@@ -59,7 +59,7 @@
           <div class="queue-controls">
             <label>选择充电桩:</label>
             <select v-model="selectedPileId" @change="fetchQueueCars">
-              <option value="">全部充电桩</option>
+              <!-- <option value="">全部充电桩</option> -->
               <option v-for="pile in pileStatus" :key="pile.pile_id" :value="pile.pile_id">
                 {{ pile.pile_id }}
               </option>

@@ -76,6 +76,7 @@ def modify_charging_mode():
 def end_charging():
     data = request.get_json()
     result = api.end_charging(data['user_id'])
+    print(result)
     return jsonify(result)
 
 # 管理员功能API

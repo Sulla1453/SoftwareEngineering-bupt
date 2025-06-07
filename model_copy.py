@@ -171,6 +171,7 @@ class ChargingPile:
         user_id, queue_number, request_data, start_time = self.charging_vehicle
         end_time = time.time()
         charging_duration = (end_time - start_time) / 3600  # 转换为小时
+        
 
         # 计算实际充电量（可能小于等于请求量）
         real_charging_amount = min(request_data["amount"], charging_duration * self.power)
@@ -578,6 +579,8 @@ class chargingStation:
                         # self.bills[user_id].append(bill)
                         success=self.db_manager.save_bill(bill)
                         print("账单保存"+ ("成功" if success else "失败"))
+                        if '_id' in bill:
+                            del bill['_id']
 
                     return bill
                 

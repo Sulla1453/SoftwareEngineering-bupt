@@ -40,6 +40,10 @@
           <!-- 提交充电请求视图 -->
           <div v-if="currentView === 'request'">
             <h3>提交充电请求</h3>
+            <div v-if="hasActiveRequest" class="alert alert-warning">
+              <p><strong>注意:</strong> 您当前有活跃的充电请求，无法提交新请求。</p>
+              <p>请先结束当前充电或通过修改功能调整您的请求。</p>
+            </div>
             <form @submit.prevent="submitRequest">
               <div class="form-group">
                 <label>充电模式:</label>
@@ -56,7 +60,9 @@
                 <label>电池容量(度):</label>
                 <input v-model.number="requestForm.batteryCapacity" type="number" step="0.1" />
               </div>
-              <button type="submit">提交请求</button>
+              <button type="submit":disabled="hasActiveRequest"
+                  :class="{ 'btn-disabled': hasActiveRequest }">
+            {{ hasActiveRequest ? '当前有活跃请求' : '提交请求' }}</button>
             </form>
           </div>
           <!-- 修改充电请求视图 -->
@@ -136,8 +142,10 @@
           amount: 10,
           batteryCapacity: 70
         },
+        hasActiveRequest: false,
         modifyForm: {
-          newAmount: 0
+          newAmount: 0,
+          newMode:"FAST"
         },
         queueNumber: "",
         waitingCount: -1,
@@ -147,8 +155,19 @@
     mounted() {
       this.user = JSON.parse(localStorage.getItem("user"));
       this.fetchBills();
+      this.checkActiveRequest();
     },
     methods: {
+      async checkActiveRequest() {
+        try {
+          const response = await fetch(`http://localhost:5000/api/queue-number/${this.user.user_id}`);
+          const result = await response.json();
+          this.hasActiveRequest = result.success && result.queue_number;
+        } catch (error) {
+          console.error("检查活跃请求失败:", error);
+          this.hasActiveRequest = false;
+        }
+      },
       async fetchBills() {
         try {
           const response = await fetch(`http://localhost:5000/api/bills/${this.user.user_id}`);
@@ -161,6 +180,10 @@
         }
       },
       async submitRequest() {
+        if (this.hasActiveRequest) {
+          alert("您当前有活跃的充电请求，请先结束当前请求或进行修改");
+          return;
+        }
         try {
           const response = await fetch("http://localhost:5000/api/charging-request", {
             method: "POST",
