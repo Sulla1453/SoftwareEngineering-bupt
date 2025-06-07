@@ -162,7 +162,7 @@
         try {
           const response = await fetch(`http://localhost:5000/api/queue-number/${this.user.user_id}`);
           const result = await response.json();
-          this.hasActiveRequest = result.success && result.queue_number;
+          this.hasActiveRequest =result.queue_number;
         } catch (error) {
           console.error("检查活跃请求失败:", error);
           this.hasActiveRequest = false;
@@ -198,6 +198,7 @@
           const result = await response.json();
           if (result.success) {
             alert(`充电请求提交成功！排队号码: ${result.queue_number}`);
+            await this.checkActiveRequest()
           } else {
             alert("提交失败: " + result.message);
           }
@@ -286,6 +287,7 @@
             this.endBill = result.bill;
             alert("结束充电成功！");
             this.fetchBills(); // 刷新详单
+            await this.checkActiveRequest()
           } else {
             alert("结束充电失败: " + result.message);
           }
