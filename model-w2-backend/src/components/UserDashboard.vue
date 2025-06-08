@@ -189,7 +189,7 @@
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({
-              user_id: this.user.user_id,
+              user_id: this.user["user_id"],
               mode: this.requestForm.mode,
               amount: this.requestForm.amount,
               battery_capacity: this.requestForm.batteryCapacity
@@ -280,7 +280,7 @@
           const response = await fetch("http://localhost:5000/api/end-charging", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ user_id: this.user.user_id })
+            body: JSON.stringify({ user_id: this.user["user_id"] })
           });
           const result = await response.json();
           if (result.success) {

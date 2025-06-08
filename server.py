@@ -14,6 +14,17 @@ api.station.init_admin_accounts()
 api.register_user("user1", "password1", car_type="Tesla Model 3")
 api.register_user("user2", "password2", car_type="NIO ES6")
 api.register_user("user3", "password3", car_type="BYD Han")
+# u1=api.login("user1", "password1")
+# u2=api.login("user2", "password2")
+# u3=api.login("user3", "password3")
+
+# # 测试 提交申请
+# print(api.submit_charging_request(u1["user_id"], "FAST", 50, battery_capacity=75))
+# api.submit_charging_request(u2["user_id"], "FAST", 30, battery_capacity=60)
+# api.submit_charging_request(u3["user_id"], "FAST", 40, battery_capacity=50)
+# time.sleep(3)
+# print(api.get_pile_queue_cars("A"))
+# print(api.get_pile_queue_cars("B"))0
 
 # 用户认证相关API
 @app.route('/api/register', methods=['POST'])
@@ -42,6 +53,7 @@ def get_bills(user_id):
 @app.route('/api/charging-request', methods=['POST'])
 def submit_charging_request():
     data = request.get_json()
+    print("前端请求数据:", data)
     result = api.submit_charging_request(
         user_id=data['user_id'],
         mode=data['mode'],
@@ -95,6 +107,7 @@ def set_pile_status():
 @app.route('/api/admin/pile-queue-cars', methods=['GET'])
 def get_pile_queue_cars():
     pile_id = request.args.get('pile_id')
+    print(pile_id)
     result = api.get_pile_queue_cars(pile_id)
     return jsonify(result)
 

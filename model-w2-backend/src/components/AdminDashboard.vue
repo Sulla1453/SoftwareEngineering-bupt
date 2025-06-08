@@ -30,7 +30,10 @@
             <div class="pile-grid">
               <div v-for="pile in pileStatus" :key="pile.pile_id" class="pile-card">
                 <h4>充电桩 {{ pile.pile_id }}</h4>
+                <p><strong>类型:</strong> {{ pile.mode }}</p>
                 <p><strong>状态:</strong> {{ pile.status }}</p>
+                <p><strong>正在充电车辆:</strong> {{ pile.charging_vehicle }}</p>
+                <p><strong>排队长度:</strong>{{ pile.queue_length }}</p>
                 <p><strong>充电次数:</strong> {{ pile.total_charging_times }}</p>
                 <p><strong>总时长:</strong> {{ pile.total_charging_duration }}小时</p>
                 <p><strong>总电量:</strong> {{ pile.total_charging_amount }}度</p>

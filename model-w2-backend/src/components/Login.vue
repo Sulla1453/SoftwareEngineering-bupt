@@ -60,6 +60,7 @@
           if (result.success) {
             const userData = this.isLogin ? result : { user_id: result.user_id, role: 'user' }
             localStorage.setItem('user', JSON.stringify(userData))
+            console.log('用户数据:', userData)
             
             // 根据角色跳转
             if (userData.role === 'admin') {
