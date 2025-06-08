@@ -241,7 +241,7 @@
             if (result.success) {
             alert(`充电模式修改成功！新排队号码: ${result.new_queue_number}`);
             } else {
-            alert("修改失败: " + result.message);
+            alert("修改失败: 请检查是否提交过请求或您的车辆正在充电" + result.message);
             }
         } catch (error) {
             alert("网络错误: " + error.message);
@@ -255,7 +255,7 @@
             this.queueNumber = result.queue_number;
           } else {
             this.queueNumber = "";
-            alert(result.message || "获取排队号码失败");
+            alert(result.message || "获取排队号码失败，您没有提交请求");
           }
         } catch (error) {
           alert("网络错误: " + error.message);
@@ -269,7 +269,7 @@
             this.waitingCount = result.waiting_count;
           } else {
             this.waitingCount = -1;
-            alert(result.message || "获取等待数量失败");
+            alert(result.message || "获取等待数量失败，您没有提交请求");
           }
         } catch (error) {
           alert("网络错误: " + error.message);
@@ -289,7 +289,7 @@
             this.fetchBills(); // 刷新详单
             await this.checkActiveRequest()
           } else {
-            alert("结束充电失败: " + result.message);
+            alert("结束充电失败: 没有正在进行的申请" + result.message);
           }
         } catch (error) {
           alert("网络错误: " + error.message);
