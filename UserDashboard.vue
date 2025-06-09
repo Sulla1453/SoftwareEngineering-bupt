@@ -15,6 +15,7 @@
             <li @click="currentView = 'modifyMode'" :class="{ active: currentView === 'modifyMode' }">修改充电模式</li>
             <li @click="currentView = 'queue_number'" :class="{ active: currentView === 'queue_number' }">查看本车排队号码</li>
             <li @click="currentView = 'waiting_count'" :class="{ active: currentView === 'waiting_count' }">查看前车等待数量</li>
+            <li @click="currentView = 'cancel_charging'" :class="{ active: currentView === 'cancel_charging' }">取消充电</li>
             <li @click="currentView = 'end_charging'" :class="{ active: currentView === 'end_charging' }">结束充电</li>
           </ul>
         </div>
@@ -122,6 +123,19 @@
               <p><strong>充电费用:</strong> ¥{{ endBill.charging_fee }}</p>
               <p><strong>服务费用:</strong> ¥{{ endBill.service_fee }}</p>
               <p><strong>总费用:</strong> ¥{{ endBill.total_fee }}</p>
+            </div>
+          </div>
+
+          <!-- 取消充电视图 -->
+          <div v-if="currentView === 'cancel_charging'">
+            <h3>取消充电</h3>
+            <div v-if="!hasActiveRequest" class="empty-state">
+              您当前没有活跃的充电请求，无法执行取消操作。
+            </div>
+            <div v-else class="info-card">
+              <p>您确定要取消当前的充电请求吗？</p>
+              <p>取消后将退出排队，如需充电需重新提交请求。</p>
+              <button @click="cancelCharging" class="btn-danger">确认取消</button>
             </div>
           </div>
         </div>
@@ -295,6 +309,29 @@
           alert("网络错误: " + error.message);
         }
       },
+      async cancelCharging() {
+        try {
+          const response = await fetch("http://localhost:5000/api/cancel-charging", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ user_id: this.user["user_id"] })
+          });
+          const result = await response.json();
+          if (result.success) {
+            alert("充电请求已成功取消！");
+            // 更新状态
+            this.hasActiveRequest = false;
+            this.queueNumber = "";
+            this.waitingCount = -1;
+            // 切换到请求视图以便用户可以提交新请求
+            this.currentView = 'request';
+          } else {
+            alert("取消充电失败: " + (result.message || "您没有活跃的充电请求或已在充电中"));
+          }
+        } catch (error) {
+          alert("网络错误: " + error.message);
+        }
+      },
       formatTime(timestamp) {
         // 如果传入的是 datetime 对象直接调用 toLocaleString，否则先转换
         if (timestamp instanceof Date) return timestamp.toLocaleString();
@@ -412,5 +449,48 @@
     border: 1px solid #dee2e6;
     border-radius: 4px;
     box-sizing: border-box;
+  }
+
+  /* 按钮样式 */
+  button {
+    padding: 0.75rem 1.5rem;
+    background-color: #007bff;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    font-weight: bold;
+    transition: background-color 0.2s;
+    margin: 0.5rem 0;
+  }
+
+  button:hover {
+    background-color: #0069d9;
+  }
+
+  button:disabled {
+    background-color: #cccccc;
+    cursor: not-allowed;
+  }
+
+  .btn-danger {
+    background-color: #dc3545;
+  }
+
+  .btn-danger:hover {
+    background-color: #c82333;
+  }
+
+  .alert {
+    padding: 1rem;
+    margin-bottom: 1rem;
+    border-radius: 4px;
+  }
+
+  .alert-warning {
+    background-color: #fff3cd;
+    border: 1px solid #ffeeba;
+    color: #856404;
   }
   </style>

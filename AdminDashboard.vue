@@ -69,14 +69,23 @@
             </select>
             <button @click="fetchQueueCars">刷新</button>
           </div>
-          
+
           <div v-if="queueCars.length === 0" class="empty-state">
             暂无排队车辆
           </div>
           <div v-else>
-            <div v-for="car in queueCars" :key="car.user_id + '_' + car.pile_id" class="queue-card">
+            <div v-for="car in queueCars" :key="car.user_id + '_' + (car.pile_id || car.queue_number)" class="queue-card">
+              <div class="car-status" :class="{
+                'status-charging': car.status === 'charging',
+                'status-queuing': car.status === 'queuing_at_pile',
+                'status-waiting': car.status === 'waiting_area'
+              }">
+                {{ car.status === 'charging' ? '正在充电' : 
+                   car.status === 'queuing_at_pile' ? '排队中' : '等候区' }}
+                {{ car.mode ? `(${car.mode === 'FAST' || car.mode === 'F' ? '快充' : '慢充'})` : '' }}
+              </div>
               <p><strong>用户ID:</strong> {{ car.user_id }}</p>
-              <!-- <p><strong>充电桩:</strong> {{ car.pile_id }}</p> -->
+              <p v-if="car.pile_id"><strong>充电桩:</strong> {{ car.pile_id }}</p>
               <p><strong>电池容量:</strong> {{ car.battery_capacity }}度</p>
               <p><strong>请求电量:</strong> {{ car.request_amount }}度</p>
               <p><strong>排队时长:</strong> {{ Math.floor(car.queue_time / 60) }}分钟</p>
@@ -173,11 +182,30 @@
           if (this.selectedPileId) {
             url += `?pile_id=${this.selectedPileId}`
           }
-          
+
           const response = await fetch(url)
           const result = await response.json()
           if (result.success) {
-            this.queueCars = result.cars || []
+            // 合并充电桩队列和等候区的车辆
+            let allCars = result.cars || [];
+            
+            // 如果有等候区数据，将其添加到队列中
+            if (result.waiting_area && typeof result.waiting_area === 'object') {
+              // 遍历等候区数据（快充和慢充）
+              for (const mode in result.waiting_area) {
+                if (Array.isArray(result.waiting_area[mode])) {
+                  // 对每个等候区车辆添加标识
+                  const waitingCars = result.waiting_area[mode].map(car => ({
+                    ...car,
+                    status: "waiting_area",
+                    mode: mode // 添加充电模式
+                  }));
+                  allCars = allCars.concat(waitingCars);
+                }
+              }
+            }
+            
+            this.queueCars = allCars;
           } else {
             console.log('获取排队车辆信息:', result.message)
             this.queueCars = []
@@ -498,6 +526,30 @@ form button:hover {
   border: 1px solid #dee2e6;
   border-radius: 4px;
   box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.car-status {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 12px;
+  margin-bottom: 0.5rem;
+  font-weight: bold;
+  font-size: 0.9rem;
+}
+
+.status-charging {
+  background-color: #d4edda;
+  color: #155724;
+}
+
+.status-queuing {
+  background-color: #fff3cd;
+  color: #856404;
+}
+
+.status-waiting {
+  background-color: #f8d7da;
+  color: #721c24;
 }
 
 .report-table {
