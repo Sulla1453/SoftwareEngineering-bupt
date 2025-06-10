@@ -335,7 +335,7 @@ export default {
     formatTime(timestamp) {
       // 如果传入的是 datetime 对象直接调用 toLocaleString，否则先转换
       if (timestamp instanceof Date) return timestamp.toLocaleString();
-      return new Date(timestamp).toLocaleString();
+      return new Date(timestamp).toLocaleString('en-US', { timeZone: 'UTC' });
     },
     logout() {
       localStorage.removeItem("user");
