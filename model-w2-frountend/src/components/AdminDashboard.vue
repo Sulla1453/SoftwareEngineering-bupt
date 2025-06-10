@@ -146,7 +146,8 @@ export default {
       queueCars: [],
       reportData: [],
       reportPeriod: 'day',
-      selectedPileId: ''
+      selectedPileId: '',
+      start_report_time:""
     }
   },
   mounted() {
@@ -242,12 +243,21 @@ export default {
       try {
         const now = Date.now() / 1000
         const oneDayAgo = now - 86400
+        const oneWeekAgo = now - 604800
+        const oneMonthAgo = now - 2592000
+        if (this.reportPeriod === 'day') {
+          this.start_report_time = oneDayAgo
+        } else if (this.reportPeriod === 'week') {
+          this.start_report_time = oneWeekAgo
+        } else if (this.reportPeriod === 'month') {
+          this.start_report_time = oneMonthAgo
+        }
         
         const response = await fetch('http://localhost:5000/api/admin/report', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            start_time: oneDayAgo,
+            start_time: this.start_report_time,
             end_time: now,
             period: this.reportPeriod
           })

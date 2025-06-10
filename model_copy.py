@@ -666,6 +666,7 @@ class chargingStation:
         with self.lock:
             # 筛选时间范围内的详单
             all_bills=self.db_manager.get_all_bills()
+            print(all_bills)
             period_bills = []
             for bill in all_bills:
                 # 将datetime对象转换为时间戳进行比较
