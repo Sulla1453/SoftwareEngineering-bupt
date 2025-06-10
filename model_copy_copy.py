@@ -8,7 +8,6 @@ import threading
 import json
 import heapq
 
-
 class Config:
     # 充电桩数量配置
     FAST_CHARGING_PILE_NUM = 2  # 快充电桩数量
@@ -44,7 +43,6 @@ class PILE_STATUS(Enum):
     CHARGING = 1  # 充电中状态
     FAULT = 2  # 故障状态
     OFF = 3  # 断开状态
-
 
 
 class TIME_PERIOD:
@@ -118,12 +116,15 @@ class ChargingPile:
         self.power = Config.FAST_CHARGING_POWER if mode == CHARGING_MODE.FAST else Config.TRICKLE_CHARGING_POWER # 充电功率
         self.queue = [] # 排队队列
         self.charging_vehicle = None # 当前充电车辆
-
+        self.cache = None
 #    数据统计
         self.total_charging_times = 0 # 总充电次数
         self.total_charging_duration = 0 # 总充电时长
         self.total_charging_amount = 0 # 总充电量
 
+        self.print_thread = None # 打印线程
+        self._stop_print_thread = threading.Event() # 停止打印事件
+    
     def is_queue_full(self):
         """判断队列是否已满"""
         return len(self.queue) >= Config.CHARGING_QUEUE_LEN - 1 # 减1是因为当前充电位不算在队列中
@@ -137,7 +138,7 @@ class ChargingPile:
         if self.is_queue_full():
             return False
         
-        # 若队列为空且当前没有车在充电，直接加入排队队列 
+        # 若队列为空且当前没有车在充电，直接充电 
         if self.is_queue_empty() and self.status == PILE_STATUS.AVAILABLE:
             self.charging_vehicle = (user_id, queue_number, request, time.time())
             self.status = PILE_STATUS.CHARGING
@@ -145,8 +146,35 @@ class ChargingPile:
         else :
             self.queue.append((user_id, queue_number, request))
         
+        if self.charging_vehicle and not self.print_thread:
+            self._stop_print_thread.clear()
+            self.print_thread = threading.Thread(target=self._print_bill_periodically, daemon=True)
+            self.print_thread.start()
+
         return True
     
+
+    def _print_bill_periodically(self):
+        while not self._stop_print_thread.is_set():
+            time.sleep(10)  # 每5分钟
+            if self.charging_vehicle:
+                user_id, queue_number, request_data, start_time = self.charging_vehicle
+                now = time.time()
+                duration = (now - start_time) / 3600  # 小时
+                charging_amount = min(request_data["amount"], duration * self.power)
+                user_name = MongoDBManager().get_user_by_id(user_id)["user"]["username"]
+                bill = self.generate_bill(
+                    user_id,
+                    start_time,
+                    now,
+                    charging_amount,
+                    duration,
+                    queue_number,
+                )
+                print(f"\n[详单实时打印] 车辆 {user_name} 当前充电详单：")
+                print(json.dumps(bill, indent=2, default=str))
+            
+
     def remove_from_queue(self, user_id: str, queue_number: str) -> bool:
         """从队列中移除车辆"""
         if self.charging_vehicle and self.charging_vehicle[0] == user_id and self.charging_vehicle[1] == queue_number:
@@ -170,6 +198,7 @@ class ChargingPile:
         # self.status = PILE_STATUS.AVAILABLE
         user_id, queue_number, request_data, start_time = self.charging_vehicle
         end_time = time.time()
+        
         charging_duration = (end_time - start_time) / 3600  # 转换为小时
         
 
@@ -191,7 +220,7 @@ class ChargingPile:
             real_charging_duration,        
             queue_number,
         )
-
+        self.cache = self.charging_vehicle
         self.charging_vehicle = None
         
         if self.queue and self.status == PILE_STATUS.AVAILABLE:
@@ -201,6 +230,9 @@ class ChargingPile:
             self.status = PILE_STATUS.AVAILABLE
             # todo request_add_queue()
             # add_request_to_queue()
+
+        self._stop_print_thread.set()
+        self.print_thread = None
 
         return bill
     
@@ -215,7 +247,6 @@ class ChargingPile:
         self.status = PILE_STATUS.CHARGING
         # else:
         #     self.status = PILE_STATUS.AVAILABLE
-            # todo request_add_queue()
         return True
     
     
@@ -266,16 +297,18 @@ class ChargingPile:
     def set_status(self, status: PILE_STATUS) -> None:
         old_status = self.status
         self.status = status
+        print(self.status)
+        bill = None
 
         if old_status == PILE_STATUS.FAULT and status == PILE_STATUS.AVAILABLE:
             if  not self.charging_vehicle and self.queue:
                 self.start_next_charging()
         
         if status == PILE_STATUS.FAULT and self.charging_vehicle:
-            current_req = self.charging_vehicle
-            recharging_requests = [current_req] + self.queue
-            self.queue = []
-            return self.finish_charging(),recharging_requests
+            time.sleep(3)  # 模拟充电桩故障处理时间
+            self.status = PILE_STATUS.FAULT
+            bill = self.finish_charging()
+        return bill
 
     def get_charging_time_estimate(self, amount: float) -> float:
         """估算充电时间"""
@@ -461,6 +494,7 @@ class chargingStation:
             self.waiting_area[mode].append((user_id, queue_number, request_data))
             self._schedule_vehicles()  # 调度车辆
             return {"queue_number": queue_number}
+        
     def get_queue_number(self, user_id: str) -> Optional[str]:
         """获取用户的排队号码"""
         with self.lock:
@@ -600,9 +634,7 @@ class chargingStation:
                         # self.bills[user_id].append(bill)
                         success=self.db_manager.save_bill(bill)
                         print("账单保存"+ ("成功" if success else "失败"))
-                        if '_id' in bill:
-                            del bill['_id']
-
+                        
                     return bill
                 
             return None
@@ -620,16 +652,17 @@ class chargingStation:
                 return None
             
             bill = self.piles[pile_id].set_status(status)
-            print(f"充电桩 {pile_id} 状态变更为 {status.name}")
-            print(bill)
             
             # 如果充电桩状态变为故障，需要处理故障队列
             if status == PILE_STATUS.FAULT:
+                self.piles[pile_id].status = status
                 self._handle_pile_fault(pile_id)
             # 如果充电桩状态从故障恢复，需要重新调度
             elif self.piles[pile_id].status == PILE_STATUS.AVAILABLE and status == PILE_STATUS.AVAILABLE:
                 self._handle_pile_recovery(pile_id)
-            
+                self.piles[pile_id].status = status
+            else :
+                self.piles[pile_id].status = status
             # 保存详单
             if bill:
                 # user_id = bill["user_id"]
@@ -638,8 +671,6 @@ class chargingStation:
                 # self.bills[user_id].append(bill)
                 success = self.db_manager.save_bill(bill)
                 print("账单保存"+ ("成功" if success else "失败"))
-                if bill['_id']:
-                    del bill['_id']
             
             return bill
     
@@ -747,7 +778,7 @@ class chargingStation:
             available_piles = []
             for pile_id, pile in self.piles.items():
                 if (pile.mode == mode and 
-                    pile.status == PILE_STATUS.AVAILABLE and 
+                    pile.status != PILE_STATUS.FAULT and 
                     not pile.is_queue_full()):
                     available_piles.append((pile_id, pile))
             
@@ -790,8 +821,12 @@ class chargingStation:
         mode = fault_pile.mode
         
         # 优先级调度：将故障充电桩的等候队列车辆重新调度
-        if fault_pile.queue:
-            fault_queue = fault_pile.queue.copy()
+        if fault_pile:
+            fault_queue = []  # 故障队列
+            if fault_pile.cache:
+                fault_queue.append((fault_pile.cache[0], fault_pile.cache[1], fault_pile.cache[2]))
+            if fault_pile.queue:
+                fault_queue.append(fault_pile.queue.copy())
             fault_pile.queue = []  # 清空故障充电桩队列
             
             # 按照策略选择处理方式：1为优先级调度，2为时间顺序调度
@@ -800,8 +835,8 @@ class chargingStation:
             if strategy == 1:  # 优先级调度
                 # 首先尝试调度故障队列中的车辆
                 for user_id, queue_number, request_data in fault_queue:
-                    self._schedule_fault_vehicle(user_id, queue_number, request_data, mode)
-            
+                    self._schedule_fault_vehicle(user_id, queue_number, request_data, mode, fault_pile)
+
             elif strategy == 2:  # 时间顺序调度
                 # 收集所有同类型充电桩中尚未充电的车辆
                 all_waiting_vehicles = []
@@ -823,7 +858,7 @@ class chargingStation:
                 
                 # 按顺序重新调度
                 for user_id, queue_number, request_data in all_waiting_vehicles:
-                    self._schedule_fault_vehicle(user_id, queue_number, request_data, mode)
+                    self._schedule_fault_vehicle(user_id, queue_number, request_data, mode, fault_pile)
         
         # 重新开启等候区叫号服务
         self.call_number_paused = False
@@ -865,14 +900,16 @@ class chargingStation:
         # 重新开启等候区叫号服务
         self.call_number_paused = False
     
-    def _schedule_fault_vehicle(self, user_id: str, queue_number: str, request_data: dict, mode: CHARGING_MODE):
+    def _schedule_fault_vehicle(self, user_id: str, queue_number: str, request_data: dict, mode: CHARGING_MODE, fault_pile: Optional[ChargingPile] = None):
         """调度故障车辆到其他充电桩"""
         # 查找最适合的充电桩（完成充电所需时长最短）
         best_pile = None
         min_completion_time = float('inf')
         
         for p_id, p in self.piles.items():
-            if p.mode == mode and p.status == PILE_STATUS.AVAILABLE and not p.is_queue_full():
+            if p == fault_pile:
+                continue
+            if p.mode == mode and p.status == PILE_STATUS.AVAILABLE and not p.is_queue_full() :
                 # 计算等待时间
                 waiting_time = p.get_waiting_time_estimate()
                 # 计算自己充电时间
@@ -1169,9 +1206,9 @@ class ChargingStationAPI:
         
         if not pile_status:
             return {"success": False, "message": "无效的状态值"}
-        
-        bill = self.station.set_pile_status(pile_id, pile_status)
-        return {"success": True, "bill": bill if bill else None}
+
+        self.station.set_pile_status(pile_id, pile_status) 
+        return {"success": True}
     
     def get_pile_status(self, pile_id: Optional[str] = None) -> dict:
         """获取充电桩状态"""
@@ -1205,36 +1242,7 @@ class ChargingStationAPI:
             return {"success": True}
         return {"success": False, "message": "全局批量调度失败"}
 
-
-
-
-
-# 测试代码
-if __name__ == "__main__":
-# 创建一个示例应用
-    api = ChargingStationAPI()
-    api.station.init_admin_accounts()
-    
-    # # 注册一些用户
-    # api.register_user("user1", "password1", car_type="Tesla Model 3")
-    # api.register_user("user2", "password2", car_type="NIO ES6")
-    # api.register_user("user3", "password3", car_type="BYD Han")
-    # api.register_user("user4", "password4", car_type="Xpeng P7")
-    
-    # # # 登录
-    # user1 = api.login("user1", "password1")["user_id"]
-    # user2 = api.login("user2", "password2")["user_id"]
-    # user3 = api.login("user3", "password3")["user_id"]
-    
-    # # # 提交充电请求
-    # api.submit_charging_request(user1, "FAST", 3.0, 70.0)
-    # api.submit_charging_request(user2, "FAST", 2.0, 60.0)
-    # api.submit_charging_request(user3, "FAST", 2.0, 65.0)
-    # time.sleep(3)
-    # api.set_pile_status("A", "fault")
-    # while True:
-    #     time.sleep(1)
-    #     print(api.get_pile_queue_cars())
+def real_test(api):
     user_ids = []
     for i in range(1, 9):
         username = f"V{i}"
@@ -1245,229 +1253,81 @@ if __name__ == "__main__":
             user_ids.append(login_result["user_id"])
         else:
             print(f"用户 {username} 登录失败")
-        
 
        
     # 6:00
     print(api.submit_charging_request(user_ids[0],"TRICKLE",7,1000))
     api.submit_charging_request(user_ids[1],"FAST",30,1000)
     # api.station._scheduler_loop()
-    # time.sleep(1800)
+    time.sleep(10)
+    print(api.station.piles["A"].queue)
 
     # 6:30
     api.submit_charging_request(user_ids[2],"TRICKLE",28,1000)
     api.submit_charging_request(user_ids[3],"FAST",120,1000)
-    # time.sleep(1800)
+    time.sleep(10)
     
 
     # 7:00
+    api.end_charging(user_ids[0])
+    api.end_charging(user_ids[1])
     api.submit_charging_request(user_ids[4],"TRICKLE",24.5,1000)
     api.submit_charging_request(user_ids[5],"FAST",46,1000)
-    # time.sleep(3600)
+    time.sleep(10)
+
 
     # 8:00
     api.submit_charging_request(user_ids[6],"FAST",75,1000)
-    # time.sleep(3600)
-    
+    time.sleep(10)
+    api.finish_charging(user_ids[2])    
     # 9:00
     api.submit_charging_request(user_ids[7],"TRICKLE",14,1000)
-    # time.sleep(3600)
-    time.sleep(3)
+    api.finish_charging(user_ids[3])
 
+    time.sleep(10)
     # 10:00
     api.set_pile_status("D","fault")
+    api.finish_charging(user_ids[4])
+    api.finish_charging(user_ids[5])
+    api.finish_charging(user_ids[6])
+    api.finish_charging(user_ids[7])
+        
+    api.get_pile_queue_cars()
     # time.sleep(3600)
     # 10:30
     api.set_pile_status("D","available")
     # time.sleep(1800)
 
+def fake_test(api):
+    api.register_user("user1", "password1", car_type="Tesla Model 3")
+    api.register_user("user2", "password2", car_type="NIO ES6")
+    api.register_user("user3", "password3", car_type="BYD Han")
     
-    # # 获取充电桩状态
-    # print(json.dumps(api.get_pile_status(), indent=2))
-    
-    # # 模拟时间流逝（系统会自动调度车辆进入充电区）
-    # print("等待调度...")
-    # time.sleep(10)
+    u1=api.login("user1", "password1")
+    u2=api.login("user2", "password2")
+    u3=api.login("user3", "password3")
 
-    
-    # # 获取充电桩队列
-    # print(json.dumps(api.get_pile_queue_cars(), indent=2))
-    
-    # # 模拟故障
-    # print("模拟充电桩A故障...")
-    # api.set_pile_status("A", "fault")
-    
-    # # 再次获取充电桩状态
-    # print(json.dumps(api.get_pile_status(), indent=2))
-    
-    # # 测试批量调度
-    # print("测试批量调度...")
-    # api.batch_schedule_vehicles("FAST")
-    
-    # print("系统运行完成")
-    # print("欢迎使用充电站系统")
-    # op=input("请选择注册还是登录：1、登录2、注册")
-    # if op=='1':
-    #     username = input("请输入用户名：").strip()
-    #     password = input("请输入密码：").strip()
 
-    #     login_result = api.login(username, password)
-    #     if not login_result or not login_result.get("user_id"):
-    #         print("登录失败，请检查用户名或密码")
-    #         exit(1)
-    #     user_id = login_result["user_id"]
-    #     user_role = login_result["role"]
+    # # 测试 提交申请
+    api.submit_charging_request(u1["user_id"], "FAST", 50, battery_capacity=75)
+    api.submit_charging_request(u2["user_id"], "FAST", 30, battery_capacity=60)
+    api.submit_charging_request(u3["user_id"], "FAST", 40, battery_capacity=50)
+    # api.submit_charging_request(u4["user_id"], "FAST", 40, battery_capacity=50)
 
-    # else:
-    #     username = input("请输入用户名：").strip()
-    #     password = input("请输入密码：").strip()
-    #     car_type = input("请输入车辆类型（如特斯拉Model 3）：").strip()
-    #     phone=input("请输入手机号：").strip()
-        
-    #     # 注册用户
-    #     register_result = api.register_user(username, password, car_type=car_type, phone=phone)
-    #     if not register_result or not register_result.get("user_id"):
-    #         print("注册失败，请检查输入信息")
-    #         exit(1)
-        
-    #     print("注册成功，您的用户ID为：", register_result["user_id"])
-    #     user_id = register_result["user_id"]
-    #     user_role = "user" 
+    time.sleep(3)
+    api.set_pile_status("A", "fault")
+    # api.set_pile_status("A", "available")
+    time.sleep(3)
 
-    # # 根据登录角色自动展示对应界面
-    # if user_role.lower() == "admin":
-    #     while True:
-    #         print("\n【管理员客户端】")
-    #         print("1. 启动/关闭充电桩")
-    #         print("2. 查看所有充电桩状态")
-    #         print("3. 查看各充电桩等候车辆信息")
-    #         print("4. 生成报表")
-    #         print("0. 退出")
-    #         choice = input("请输入选项：").strip()
-            
-    #         if choice == "1":
-    #             pile_id = input("请输入充电桩编号（如A、B等）：").strip().upper()
-    #             status = input("请输入目标状态（available/off/fault）：").strip().lower()
-    #             result = api.set_pile_status(pile_id, status)
-    #             if result["success"]:
-    #                 print("充电桩状态已更新")
-    #             else:
-    #                 print("更新失败：", result.get("message", ""))
-    #         elif choice == "2":
-    #             result = api.get_pile_status()
-    #             if result["success"]:
-    #                 print("充电桩状态：")
-    #                 print(result["status"])
-    #         elif choice == "3":
-    #             pile_id = input("请指定充电桩编号（留空表示全部）：").strip().upper()
-    #             result = api.get_pile_queue_cars(pile_id if pile_id else None)
-    #             if result["success"]:
-    #                 print("等候车辆信息：")
-    #                 print(result["cars"])
-    #         elif choice == "4":
-    #             # 简单示例：生成近一天的报表
-    #             now = time.time()
-    #             one_day_ago = now - 86400
-    #             period = input("请输入报表时间周期（day/week/month）：").strip().lower()
-    #             result = api.generate_report(one_day_ago, now, period)
-    #             if result["success"]:
-    #                 print("报表：")
-    #                 for item in result["report"]:
-    #                     print(item)
-    #         elif choice == "0":
-    #             print("退出系统")
-    #             break
-    #         else:
-    #             print("无效选项，请重试。")
-    
-    # else:
-    #     while True:
-    #         print("\n【用户客户端】")
-    #         print("1. 查看充电详单")
-    #         print("2. 提交充电请求")
-    #         print("3. 修改充电请求（充电量）")
-    #         print("4. 查看本车排队号码")
-    #         print("5. 查看前车等待数量")
-    #         print("6. 结束充电")
-    #         print("7. 修改充电模式")
-    #         print("0. 退出")
-    #         choice = input("请输入选项：").strip()
-            
-    #         if choice == "1":
-    #             result = api.get_bills(user_id)
-    #             if result["success"]:
-    #                 print("充电详单：")
-    #                 for bill in result["bills"]:
-    #                     print("详单编号：{}".format(bill.get("bill_id")))
-    #                     print("生成时间：{}".format(bill.get("generated_time")))
-    #                     print("充电桩编号：{}".format(bill.get("pile_id")))
-    #                     print("充电电量：{}".format(bill.get("charging_amount")))
-    #                     print("充电时长：{}".format(bill.get("charging_duration")))
-    #                     print("启动时间：{}".format(bill.get("start_time")))
-    #                     print("停止时间：{}".format(bill.get("end_time")))
-    #                     print("充电费用：{}".format(bill.get("charging_fee")))
-    #                     print("服务费用：{}".format(bill.get("service_fee")))
-    #                     print("总费用：{}".format(bill.get("total_fee")))
-    #                     print("--------------")
-    #         elif choice == "2":
-    #             mode = input("请输入充电模式（FAST/TRICKLE）：").strip().upper()
-    #             try:
-    #                 amount = float(input("请输入请求充电量（度）：").strip())
-    #             except ValueError:
-    #                 print("无效的充电量输入")
-    #                 continue
-    #             result = api.submit_charging_request(user_id, mode, amount)
-    #             if result["success"]:
-    #                 print("充电请求提交成功，您的排队号码为：" + result["queue_number"])
-    #             else:
-    #                 print("提交失败：", result.get("message", ""))
-    #         elif choice == "3":
-    #             try:
-    #                 new_amount = float(input("请输入新的充电量（度）：").strip())
-    #             except ValueError:
-    #                 print("无效输入")
-    #                 continue
-    #             result = api.modify_charging_amount(user_id, new_amount)
-    #             if result["success"]:
-    #                 print("充电量修改成功")
-    #             else:
-    #                 print("修改失败：", result.get("message", ""))
-    #         elif choice == "4":
-    #             result = api.get_queue_number(user_id)
-    #             if result["success"]:
-    #                 print("当前排队号码为：" + result["queue_number"])
-    #             else:
-    #                 print("获取排队号码失败：", result.get("message", ""))
-    #         elif choice == "5":
-    #             result = api.get_waiting_count(user_id)
-    #             if result["success"]:
-    #                 print("前车等待数量为：{}".format(result["waiting_count"]))
-    #             else:
-    #                 print("查询失败：", result.get("message", ""))
-    #         elif choice == "6":
-    #             result = api.end_charging(user_id)
-    #             if result["success"]:
-    #                 print("充电结束，生成详单：")
-    #                 bill = result["bill"]
-    #                 print("详单编号：{}".format(bill.get("bill_id")))
-    #                 print("启动时间：{}".format(bill.get("start_time")))
-    #                 print("停止时间：{}".format(bill.get("end_time")))
-    #                 print("充电电量：{}".format(bill.get("charging_amount")))
-    #                 print("充电时长：{}".format(bill.get("charging_duration")))
-    #                 print("充电费用：{}".format(bill.get("charging_fee")))
-    #                 print("服务费用：{}".format(bill.get("service_fee")))
-    #                 print("总费用：{}".format(bill.get("total_fee")))
-    #             else:
-    #                 print("结束充电失败：", result.get("message", ""))
-    #         elif choice == "0":
-    #             print("退出系统")
-    #             break
-    #         elif choice == "7":
-    #             new_mode = input("请输入新的充电模式（FAST/TRICKLE）：").strip().upper()
-    #             result = api.modify_charging_mode(user_id, new_mode)
-    #             if result["success"]:
-    #                 print("充电模式修改成功，新排队号码为：" + result["new_queue_number"])
-    #             else:
-    #                 print("修改失败：", result.get("message", ""))
-    #         else:
-    #             print("无效选项，请重试。")
+
+    print("GET A")
+    api.get_pile_queue_cars("A")
+    print("GET B")
+    api.get_pile_queue_cars("B")
+    print("等待区：", api.get_waiting_area_info())
+
+
+if __name__ == "__main__":
+    api = ChargingStationAPI()
+    # real_test(api)
+    fake_test(api)

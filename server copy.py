@@ -29,7 +29,7 @@ api.submit_charging_request(u2["user_id"], "FAST", 30, battery_capacity=60)
 api.submit_charging_request(u3["user_id"], "FAST", 40, battery_capacity=50)
 # # time.sleep(3)
 time.sleep(3)
-api.set_pile_status("A", "fault")
+# api.set_pile_status("A", "fault")
 # while(1):
 #     time.sleep(1)
 #     print(api.get_pile_queue_cars())

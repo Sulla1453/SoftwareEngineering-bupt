@@ -120,7 +120,7 @@ class MongoDBManager:
     def get_all_bills(self) -> list:
         """获取所有账单"""
         try:
-            bills = list(self.bills_collection.find({}))
+            bills = list(self.bills_collection.find({}, {"_id": 0}))
             return bills
         except Exception as e:
             print(f"获取所有账单失败: {e}")

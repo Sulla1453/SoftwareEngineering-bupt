@@ -225,8 +225,6 @@ export default {
           
           body: JSON.stringify({ pile_id: pileId, status })
         })
-        alert("设置前")
-        
         const result = await response.json()
         if (result.success) {
           this.fetchPileStatus() // 刷新状态
