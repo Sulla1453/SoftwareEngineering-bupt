@@ -168,7 +168,7 @@ export default {
     },
     async fetchPileStatus() {
       try {
-        const response = await fetch('http://localhost:5000/api/admin/pile-status')
+        const response = await fetch('http://localhost:5000/api/admin/get-pile-status')
         const result = await response.json()
         if (result.success) {
           this.pileStatus = Array.isArray(result.status) ? result.status : [result.status]
@@ -219,7 +219,7 @@ export default {
     
     async setPileStatus(pileId, status) {
       try {
-        const response = await fetch('http://localhost:5000/api/admin/pile-status', {
+        const response = await fetch('http://localhost:5000/api/admin/set-pile-status', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           
@@ -235,7 +235,7 @@ export default {
           alert('更新失败: ' + result.message)
         }
       } catch (error) {
-        alert('网络错误: ' + error.message)
+        console.log('网络错误: ' + error)
       }
     },
     

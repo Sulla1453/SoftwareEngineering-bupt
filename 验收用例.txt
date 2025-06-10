@@ -1,0 +1,43 @@
+1. 每个发生的事件为一个四元组E = (事件类型, 对应id, 充电类型, 数值)，其中
+
+	——事件类型，有三种类型的事件：
+		     A(Apply, 充电请求)
+		     B(Breakdown, 充电桩故障)
+		     C(Change, 变更充电请求)
+
+	——对应id, 有两类id:
+		     班级号_组号_车辆号（例V1）: 代表一辆电动车（对应事件A,C)
+		     Fj, Tk: 代表j号快充电桩或k号慢充电桩 （对应事件B）
+
+	——充电类型，有两种充电类型，注意充电类型当且仅当对应id为V时才有效
+	        当事件类型为变更充电时，充电类型代表变更后的充电类型
+		     F: 代表快充
+		     T: 代表慢充
+		     O: 不变更
+
+	——数值，有两类数值，
+		  （1）当对应id类型为电动车时，该数值代表请求充电量，单位为度，充电量为0时代表取消充电，-1代表不变更
+		  （2）当对应id类型为充电桩时，0代表充电桩故障，1代表充电桩恢复
+
+2. 事件举例：
+    (A, V1, F, 60)：编号为V1的电动车，请求快充60度电
+    (A, V2, T, 30)：编号为V2的电动车，请求慢充30度电
+    (A, V3, O, 0)：编号为V3的电动车，取消充电
+    (C, V1, T, -1)：编号为V1的电动车，将充电类型变更为慢充，充电量不变
+    (C, V2, O, 50)：编号为V2的电动车，充电类型不变，充电量变为50度
+    (C, V3, F, 60)：编号为V3的电动车，将充电类型变更为快充，充电量变为60度
+    (B, F1, O, 0)：编号为1的快充充电桩，故障
+    (B, F1, O, 1)：编号为1的快充充电桩，恢复
+
+注意：以上事件举例涵盖所有可能的类型，测试用例不会出现歧义，也不会有错误的用例
+
+6:00:00 api.submit_charging_request(V1,"TRICKLE",7,1000);
+		api.submit_charging_request(V2,"FAST",30,1000);
+6:30:00 api.submit_charging_request(V3,"TRICKLE",28,1000);
+		api.submit_charging_request(V4,"FAST",120,1000);
+7:00:00 api.submit_charging_request(V5,"TRICKLE",24.5,1000);
+		api.submit_charging_request(V6,"FAST",45,1000);
+8:00:00 api.submit_charging_request(V7,"FAST",75,1000);
+9:00:00 api.submit_charging_request(V8,"TRICKLE",14,1000);
+10:00:00 api.set_pile_status("D","fault");
+10:30:00 api.set_pile_status("D","available");

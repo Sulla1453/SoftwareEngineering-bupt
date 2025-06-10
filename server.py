@@ -4,7 +4,7 @@ from model_copy import ChargingStationAPI
 import time
 
 app = Flask(__name__)
-CORS(app)  # 允许跨域请求
+CORS(app, origins=['http://localhost:5173'])  # 允许跨域请求
 
 # 初始化充电站API
 api = ChargingStationAPI()
@@ -133,16 +133,17 @@ def cancel_charging():
     return jsonify(result)
 
 # 管理员功能API
-@app.route('/api/admin/pile-status', methods=['GET'])
+@app.route('/api/admin/get-pile-status', methods=['GET'])
 def get_pile_status():
     pile_id = request.args.get('pile_id')
     result = api.get_pile_status(pile_id)
     return jsonify(result)
 
-@app.route('/api/admin/pile-status', methods=['PUT'])
+@app.route('/api/admin/set-pile-status', methods=['PUT'])
 def set_pile_status():
     data = request.get_json()
     result = api.set_pile_status(data['pile_id'], data['status'])
+    print(result)
     return jsonify(result)
 
 

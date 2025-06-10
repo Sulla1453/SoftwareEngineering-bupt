@@ -617,6 +617,8 @@ class chargingStation:
                 return None
             
             bill = self.piles[pile_id].set_status(status)
+            print(f"充电桩 {pile_id} 状态变更为 {status.name}")
+            print(bill)
             
             # 如果充电桩状态变为故障，需要处理故障队列
             if status == PILE_STATUS.FAULT:
@@ -666,7 +668,6 @@ class chargingStation:
         with self.lock:
             # 筛选时间范围内的详单
             all_bills=self.db_manager.get_all_bills()
-            print(all_bills)
             period_bills = []
             for bill in all_bills:
                 # 将datetime对象转换为时间戳进行比较
@@ -1165,6 +1166,8 @@ class ChargingStationAPI:
             return {"success": False, "message": "无效的状态值"}
         
         bill = self.station.set_pile_status(pile_id, pile_status)
+        if bill['_id']:
+            del bill['_id']
         return {"success": True, "bill": bill if bill else None}
     
     def get_pile_status(self, pile_id: Optional[str] = None) -> dict:
